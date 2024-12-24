@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -10,6 +12,8 @@ namespace RoslynCodeGen.Generators;
 [Generator]
 public class PromulgateGenerator : IIncrementalGenerator
 {
+    private readonly HashSet<string> _declaredHandlers = new();
+    
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         // Get params for all fields with the [Promulgate] attribute
@@ -51,13 +55,11 @@ public class PromulgateGenerator : IIncrementalGenerator
 
         if (validateAttribute == null)
             return null;
+        
+        // Extract metadata from the attribute
+        var (verifyHandler, refineHandler, verify, refine) = SimulatePromulgateAttribute(validateAttribute);
 
-        string? verifyHandler = null;
-        string? refineHandler = null;
-
-        bool verify = true;
-        bool refine = false;
-
+/*
         foreach (var namedArg in validateAttribute.NamedArguments)
         {
             switch (namedArg.Key)
@@ -77,7 +79,7 @@ public class PromulgateGenerator : IIncrementalGenerator
                 default:
                     continue;
             }
-        }
+        }*/
 
         // Create a diagnostic if the field is not readonly
         var diagnostic = fieldSymbol.IsReadOnly
@@ -98,6 +100,35 @@ public class PromulgateGenerator : IIncrementalGenerator
             Refine = refine
         };
     }
+    
+    /// <summary>
+    /// Helper to extract named argument values from an AttributeData object.
+    /// </summary>
+    private static T GetAttributeProperty<T>(AttributeData attributeData, string propertyName)
+    {
+        // First try constructor arguments
+        foreach (var constructorArg in attributeData.ConstructorArguments)
+        {
+            if (constructorArg.Value is T value)
+            {
+                return value;
+            }
+        }
+
+        // Then try named arguments
+        foreach (var namedArg in attributeData.NamedArguments)
+        {
+            if (namedArg.Key == propertyName)
+            {
+                if (namedArg.Value.Value is T value)
+                {
+                    return value;
+                }
+            }
+        }
+
+        return default!;
+    }
 
     private static readonly DiagnosticDescriptor FieldNotReadonlyError = new DiagnosticDescriptor(
         id: "GEN001",
@@ -108,7 +139,7 @@ public class PromulgateGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
-    private static void GenerateSource(SourceProductionContext context, PromulgateParams promulgateParams)
+    private void GenerateSource(SourceProductionContext context, PromulgateParams promulgateParams)
     {
         var fieldSymbol = promulgateParams.FieldSymbol;
         var containingClass = fieldSymbol.ContainingType;
@@ -143,7 +174,26 @@ public class PromulgateGenerator : IIncrementalGenerator
         var refinePartialDeclaration = promulgateParams.Refine
             ? $"private static partial {dataType} {refineHandlerName}({dataType} value);"
             : "";
+        
+        var verifyKey = $"{namespaceName}.{className} {verifyPartialDeclaration}";
+        if (_declaredHandlers.Contains(verifyKey))
+        {
+            verifyPartialDeclaration = "";
+        }
+        else
+        {
+            _declaredHandlers.Add(verifyKey);
+        }
 
+        var refineKey = $"{namespaceName}.{className} {refinePartialDeclaration}";
+        if (_declaredHandlers.Contains(refineKey))
+        {
+            refinePartialDeclaration = "";
+        }
+        else
+        {
+            _declaredHandlers.Add(refineKey);
+        }
         var source =
             $$"""
               namespace {{namespaceName}}
@@ -184,4 +234,78 @@ public class PromulgateGenerator : IIncrementalGenerator
         public bool Verify { get; set; }
         public bool Refine { get; set; }
     }
+    
+    
+/// <summary>
+/// Simulates the constructor logic of PromulgateAttribute.
+/// </summary>
+private static (string? VerifyHandler, string? RefineHandler, bool Verify, bool Refine)
+    SimulatePromulgateAttribute(AttributeData attributeData)
+{
+    // Extract the constructor arguments
+
+    if (attributeData.ConstructorArguments.Length != 4) throw new NotImplementedException();
+
+    string? verifyHandler = (string?)attributeData.ConstructorArguments[0].Value;    
+    string? refineHandler = (string?)attributeData.ConstructorArguments[1].Value;    
+    bool verify = (bool)attributeData.ConstructorArguments[2].Value; 
+    bool refine = (bool)attributeData.ConstructorArguments[3].Value;
+/*
+    if (attributeData.ConstructorArguments.Length > 0)
+    {
+        foreach (var arg in attributeData.ConstructorArguments)
+        {
+            if (arg.Value is string strValue)
+            {
+                if (verifyHandler == null)
+                {
+                    verifyHandler = strValue;
+                }
+                else
+                {
+                    refineHandler = strValue;
+                }
+            }
+            else if (arg.Value is bool boolValue)
+            {
+                if (verifyHandler == null || refineHandler == null)
+                {
+                    verify = boolValue;
+                }
+                else
+                {
+                    refine = boolValue;
+                }
+            }
+        }
+    }*/
+
+    // Extract named arguments (e.g., Verify = true, Refine = true)
+    foreach (var arg in attributeData.NamedArguments)
+    {
+        switch (arg.Key)
+        {
+            case "VerifyHandler":
+                verifyHandler = arg.Value.Value as string;
+                break;
+            case "RefineHandler":
+                refineHandler = arg.Value.Value as string;
+                break;
+            case "Verify":
+                if (arg.Value.Value is bool verifyValue)
+                    verify = verifyValue;
+                break;
+            case "Refine":
+                if (arg.Value.Value is bool refineValue)
+                    refine = refineValue;
+                break;
+        }
+    }
+
+    // Simulate the constructor logic
+    verify = verify || !string.IsNullOrEmpty(verifyHandler);
+    refine = refine || !string.IsNullOrEmpty(refineHandler);
+
+    return (verifyHandler, refineHandler, verify, refine);
+}
 }
