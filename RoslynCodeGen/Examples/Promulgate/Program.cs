@@ -52,6 +52,13 @@ public static class Program
 
     public static void Main(string[] args)
     {
+        Console.WriteLine("Method Logger!");
+        var mlogger = new MethodLogger();
+        int result = mlogger.Divide(10, 2);
+        
+        Console.WriteLine(result);
+        
+        
         Console.WriteLine("Promulgate!");
 
         var personA = new TestRec { FunkyCount = 1, Name = "Jack", School = "School of Rock" };
