@@ -14,4 +14,9 @@
     <ProjectReference Include="..\..\RoslynCodeGen.Generators\RoslynCodeGen.Generators.csproj"  OutputItemType="Analyzer" ReferenceOutputAssembly="false" /> 
   </ItemGroup>
 
+
+  <ItemGroup>
+    <Folder Include="obj\Debug\" />
+  </ItemGroup>
+
 </Project>

@@ -81,7 +81,7 @@ public class MethodLoggerGenerator : ISourceGenerator
             var className = classNode?.Identifier.Text;
 
             // Extract the method's body
-            var methodBody = methodDeclaration.Body?.ToString() ?? string.Empty;
+            var methodBody = methodDeclaration.Body?.ToString() ?? "";
 
             var stubCode = $@"
 namespace {namespaceName}
