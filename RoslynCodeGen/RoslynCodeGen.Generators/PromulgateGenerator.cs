@@ -7,57 +7,58 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
-namespace RoslynCodeGen.Generators;
-
-[Generator]
-public class PromulgateGenerator : IIncrementalGenerator
+namespace RoslynCodeGen.Generators
 {
-    private readonly HashSet<string> _declaredHandlers = new();
-    
-    public void Initialize(IncrementalGeneratorInitializationContext context)
+
+    [Generator]
+    public class PromulgateGenerator : IIncrementalGenerator
     {
-        // Get params for all fields with the [Promulgate] attribute
-        var fieldMetaData = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                predicate: IsCandidateField,
-                transform: GetPromulgateParams
-            )
-            .Where(field => field is not null);
+        private readonly HashSet<string> _declaredHandlers = new HashSet<string>();
 
-        // Add diagnostics
-        context.RegisterSourceOutput(
-            source: fieldMetaData.Where(result => result.Diagnostic != null),
-            action: (ctx, result) => ctx.ReportDiagnostic(result.Diagnostic!));
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            // Get params for all fields with the [Promulgate] attribute
+            var fieldMetaData = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    predicate: IsCandidateField,
+                    transform: GetPromulgateParams
+                )
+                .Where(field => field != null);
 
-        // Generate
-        context.RegisterSourceOutput(fieldMetaData, GenerateSource);
-    }
+            // Add diagnostics
+            context.RegisterSourceOutput(
+                source: fieldMetaData.Where(result => result.Diagnostic != null),
+                action: (ctx, result) => ctx.ReportDiagnostic(result.Diagnostic!));
 
-    private static bool IsCandidateField(SyntaxNode node, CancellationToken cancellationToken)
-    {
-        // Look for field declarations with attributes
-        return node is FieldDeclarationSyntax fieldSyntax && fieldSyntax.AttributeLists.Count > 0;
-    }
+            // Generate
+            context.RegisterSourceOutput(fieldMetaData, GenerateSource);
+        }
 
-    private static PromulgateParams? GetPromulgateParams(GeneratorSyntaxContext context,
-        CancellationToken cancellationToken)
-    {
-        var fieldNode = (FieldDeclarationSyntax)context.Node;
-        var variable = fieldNode.Declaration.Variables.First();
-        var fieldSymbol = context.SemanticModel.GetDeclaredSymbol(variable, cancellationToken) as IFieldSymbol;
+        private static bool IsCandidateField(SyntaxNode node, CancellationToken cancellationToken)
+        {
+            // Look for field declarations with attributes
+            return node is FieldDeclarationSyntax fieldSyntax && fieldSyntax.AttributeLists.Count > 0;
+        }
 
-        if (fieldSymbol == null)
-            return null;
+        private static PromulgateParams? GetPromulgateParams(GeneratorSyntaxContext context,
+            CancellationToken cancellationToken)
+        {
+            var fieldNode = (FieldDeclarationSyntax)context.Node;
+            var variable = fieldNode.Declaration.Variables.First();
+            var fieldSymbol = context.SemanticModel.GetDeclaredSymbol(variable, cancellationToken) as IFieldSymbol;
 
-        // Check if the field is annotated with [Validate]
-        var validateAttribute = fieldSymbol.GetAttributes()
-            .FirstOrDefault(attr => attr.AttributeClass?.Name == nameof(PromulgateAttribute));
+            if (fieldSymbol == null)
+                return null;
 
-        if (validateAttribute == null)
-            return null;
-        
-        // Extract metadata from the attribute
-        var (verifyHandler, refineHandler, verify, refine) = SimulatePromulgateAttribute(validateAttribute);
+            // Check if the field is annotated with [Validate]
+            var validateAttribute = fieldSymbol.GetAttributes()
+                .FirstOrDefault(attr => attr.AttributeClass?.Name == nameof(PromulgateAttribute));
+
+            if (validateAttribute == null)
+                return null;
+
+            // Extract metadata from the attribute
+            var (verifyHandler, refineHandler, verify, refine) = SimulatePromulgateAttribute(validateAttribute);
 
 /*
         foreach (var namedArg in validateAttribute.NamedArguments)
@@ -81,175 +82,175 @@ public class PromulgateGenerator : IIncrementalGenerator
             }
         }*/
 
-        // Create a diagnostic if the field is not readonly
-        var diagnostic = fieldSymbol.IsReadOnly
-            ? null
-            : Diagnostic.Create(
-                FieldNotReadonlyError,
-                fieldSymbol.Locations.FirstOrDefault(),
-                fieldSymbol.Name
-            );
+            // Create a diagnostic if the field is not readonly
+            var diagnostic = fieldSymbol.IsReadOnly
+                ? null
+                : Diagnostic.Create(
+                    FieldNotReadonlyError,
+                    fieldSymbol.Locations.FirstOrDefault(),
+                    fieldSymbol.Name
+                );
 
-        return new PromulgateParams
-        {
-            FieldSymbol = fieldSymbol,
-            Diagnostic = diagnostic,
-            VerifyHandler = verifyHandler,
-            RefineHandler = refineHandler,
-            Verify = verify,
-            Refine = refine
-        };
-    }
-    
-    /// <summary>
-    /// Helper to extract named argument values from an AttributeData object.
-    /// </summary>
-    private static T GetAttributeProperty<T>(AttributeData attributeData, string propertyName)
-    {
-        // First try constructor arguments
-        foreach (var constructorArg in attributeData.ConstructorArguments)
-        {
-            if (constructorArg.Value is T value)
+            return new PromulgateParams
             {
-                return value;
-            }
+                FieldSymbol = fieldSymbol,
+                Diagnostic = diagnostic,
+                VerifyHandler = verifyHandler,
+                RefineHandler = refineHandler,
+                Verify = verify,
+                Refine = refine
+            };
         }
 
-        // Then try named arguments
-        foreach (var namedArg in attributeData.NamedArguments)
+        /// <summary>
+        /// Helper to extract named argument values from an AttributeData object.
+        /// </summary>
+        private static T GetAttributeProperty<T>(AttributeData attributeData, string propertyName)
         {
-            if (namedArg.Key == propertyName)
+            // First try constructor arguments
+            foreach (var constructorArg in attributeData.ConstructorArguments)
             {
-                if (namedArg.Value.Value is T value)
+                if (constructorArg.Value is T value)
                 {
                     return value;
                 }
             }
-        }
 
-        return default!;
-    }
-
-    private static readonly DiagnosticDescriptor FieldNotReadonlyError = new DiagnosticDescriptor(
-        id: "GEN001",
-        title: "ValidateAttribute requires readonly backing fields",
-        messageFormat: "The field '{0}' is decorated with [Validate] but must be declared as 'readonly'",
-        category: "SourceGenerator",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true
-    );
-
-    private void GenerateSource(SourceProductionContext context, PromulgateParams promulgateParams)
-    {
-        var fieldSymbol = promulgateParams.FieldSymbol;
-        var containingClass = fieldSymbol.ContainingType;
-        var className = containingClass.Name;
-        var namespaceName = containingClass.ContainingNamespace.ToDisplayString();
-        var fieldName = fieldSymbol.Name;
-        var dataType = fieldSymbol.Type.ToString();
-
-        // Field named like `_myValue` will get a property named like `MyValue`   
-        var propertyName = char.ToUpper(fieldName[1]) + fieldName.Substring(2);
-
-        // Handlers will be named `VerifyMyValue` and `RefineMyValue` unless otherwise specified
-        var verifyHandlerName = promulgateParams.VerifyHandler ?? $"{nameof(PromulgateAttribute.Verify)}{propertyName}";
-        var refineHandlerName = promulgateParams.RefineHandler ?? $"{nameof(PromulgateAttribute.Refine)}{propertyName}";
-
-        // Verify: call the predicate handler and potentially throw; or do nothing if disabled
-        var verifySource = promulgateParams.Verify
-            ? $"""
-               if (!{verifyHandlerName}(value)) throw new RoslynCodeGen.PromulgateVerifyException("{className}", "{propertyName}", value);
-               """
-            : "";
-
-        // Refine: call the transformation handler; or use the raw value if disabled
-        var refineSource = promulgateParams.Refine
-            ? $"{refineHandlerName}(value)"
-            : "value";
-
-        var verifyPartialDeclaration = promulgateParams.Verify
-            ? $"private static partial bool {verifyHandlerName}({dataType} value);"
-            : "";
-
-        var refinePartialDeclaration = promulgateParams.Refine
-            ? $"private static partial {dataType} {refineHandlerName}({dataType} value);"
-            : "";
-        
-        var verifyKey = $"{namespaceName}.{className} {verifyPartialDeclaration}";
-        if (_declaredHandlers.Contains(verifyKey))
-        {
-            verifyPartialDeclaration = "";
-        }
-        else
-        {
-            _declaredHandlers.Add(verifyKey);
-        }
-
-        var refineKey = $"{namespaceName}.{className} {refinePartialDeclaration}";
-        if (_declaredHandlers.Contains(refineKey))
-        {
-            refinePartialDeclaration = "";
-        }
-        else
-        {
-            _declaredHandlers.Add(refineKey);
-        }
-        var source =
-            $$"""
-              namespace {{namespaceName}}
-              {
-                public partial record {{className}}
+            // Then try named arguments
+            foreach (var namedArg in attributeData.NamedArguments)
+            {
+                if (namedArg.Key == propertyName)
                 {
-                  public required {{dataType}} {{propertyName}}
-                  {
-                    get
+                    if (namedArg.Value.Value is T value)
                     {
-                      return {{fieldName}};
+                        return value;
                     }
-                    init
-                    {
-                       {{verifySource}}
-                       {{fieldName}} = {{refineSource}};
-                    }
-                  }
-                  {{verifyPartialDeclaration}}
-                  {{refinePartialDeclaration}}
                 }
-              }
-              """;
+            }
 
-        // Add the generated code
-        string filename = $"{namespaceName.Replace('.', '_')}_{className}_{propertyName}.g.cs";
-        context.AddSource(filename, SourceText.From(source, Encoding.UTF8));
-    }
+            return default!;
+        }
 
-    private class PromulgateParams
-    {
-        public IFieldSymbol FieldSymbol { get; set; }
-        public Diagnostic? Diagnostic { get; set; }
+        private static readonly DiagnosticDescriptor FieldNotReadonlyError = new DiagnosticDescriptor(
+            id: "GEN001",
+            title: "ValidateAttribute requires readonly backing fields",
+            messageFormat: "The field '{0}' is decorated with [Validate] but must be declared as 'readonly'",
+            category: "SourceGenerator",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
 
-        public string? VerifyHandler { get; set; }
-        public string? RefineHandler { get; set; }
+        private void GenerateSource(SourceProductionContext context, PromulgateParams promulgateParams)
+        {
+            var fieldSymbol = promulgateParams.FieldSymbol;
+            var containingClass = fieldSymbol.ContainingType;
+            var className = containingClass.Name;
+            var namespaceName = containingClass.ContainingNamespace.ToDisplayString();
+            var fieldName = fieldSymbol.Name;
+            var dataType = fieldSymbol.Type.ToString();
 
-        public bool Verify { get; set; }
-        public bool Refine { get; set; }
-    }
-    
-    
-/// <summary>
-/// Simulates the constructor logic of PromulgateAttribute.
-/// </summary>
-private static (string? VerifyHandler, string? RefineHandler, bool Verify, bool Refine)
-    SimulatePromulgateAttribute(AttributeData attributeData)
-{
-    // Extract the constructor arguments
+            // Field named like `_myValue` will get a property named like `MyValue`   
+            var propertyName = char.ToUpper(fieldName[1]) + fieldName.Substring(2);
 
-    if (attributeData.ConstructorArguments.Length != 4) throw new NotImplementedException();
+            // Handlers will be named `VerifyMyValue` and `RefineMyValue` unless otherwise specified
+            var verifyHandlerName =
+                promulgateParams.VerifyHandler ?? $"{nameof(PromulgateAttribute.Verify)}{propertyName}";
+            var refineHandlerName =
+                promulgateParams.RefineHandler ?? $"{nameof(PromulgateAttribute.Refine)}{propertyName}";
 
-    string? verifyHandler = (string?)attributeData.ConstructorArguments[0].Value;    
-    string? refineHandler = (string?)attributeData.ConstructorArguments[1].Value;    
-    bool verify = (bool)attributeData.ConstructorArguments[2].Value; 
-    bool refine = (bool)attributeData.ConstructorArguments[3].Value;
+            // Verify: call the predicate handler and potentially throw; or do nothing if disabled
+            var verifySource = promulgateParams.Verify
+                ? @$"if (!{verifyHandlerName}(value)) throw new RoslynCodeGen.PromulgateVerifyException(""{className}"", ""{propertyName}"", value);"
+                : "";
+
+            // Refine: call the transformation handler; or use the raw value if disabled
+            var refineSource = promulgateParams.Refine
+                ? $"{refineHandlerName}(value)"
+                : "value";
+
+            var verifyPartialDeclaration = promulgateParams.Verify
+                ? $"private static partial bool {verifyHandlerName}({dataType} value);"
+                : "";
+
+            var refinePartialDeclaration = promulgateParams.Refine
+                ? $"private static partial {dataType} {refineHandlerName}({dataType} value);"
+                : "";
+
+            var verifyKey = $"{namespaceName}.{className} {verifyPartialDeclaration}";
+            if (_declaredHandlers.Contains(verifyKey))
+            {
+                verifyPartialDeclaration = "";
+            }
+            else
+            {
+                _declaredHandlers.Add(verifyKey);
+            }
+
+            var refineKey = $"{namespaceName}.{className} {refinePartialDeclaration}";
+            if (_declaredHandlers.Contains(refineKey))
+            {
+                refinePartialDeclaration = "";
+            }
+            else
+            {
+                _declaredHandlers.Add(refineKey);
+            }
+
+            var source =
+                @$"namespace {namespaceName}
+{{
+    public partial record {className}
+    {{
+        public required {dataType} {propertyName}
+        {{
+            get
+            {{
+                return {fieldName};
+            }}
+            init
+            {{
+                {verifySource}
+                {fieldName} = {refineSource};
+            }}
+        }}
+        {verifyPartialDeclaration}
+        {refinePartialDeclaration}
+    }}
+}}
+";
+
+            // Add the generated code
+            string filename = $"{namespaceName.Replace('.', '_')}_{className}_{propertyName}.g.cs";
+            context.AddSource(filename, SourceText.From(source, Encoding.UTF8));
+        }
+
+        private class PromulgateParams
+        {
+            public IFieldSymbol FieldSymbol { get; set; }
+            public Diagnostic? Diagnostic { get; set; }
+
+            public string? VerifyHandler { get; set; }
+            public string? RefineHandler { get; set; }
+
+            public bool Verify { get; set; }
+            public bool Refine { get; set; }
+        }
+
+
+        /// <summary>
+        /// Simulates the constructor logic of PromulgateAttribute.
+        /// </summary>
+        private static (string? VerifyHandler, string? RefineHandler, bool Verify, bool Refine)
+            SimulatePromulgateAttribute(AttributeData attributeData)
+        {
+            // Extract the constructor arguments
+
+            if (attributeData.ConstructorArguments.Length != 4) throw new NotImplementedException();
+
+            string? verifyHandler = (string?)attributeData.ConstructorArguments[0].Value;
+            string? refineHandler = (string?)attributeData.ConstructorArguments[1].Value;
+            bool verify = (bool)attributeData.ConstructorArguments[2].Value;
+            bool refine = (bool)attributeData.ConstructorArguments[3].Value;
 /*
     if (attributeData.ConstructorArguments.Length > 0)
     {
@@ -280,32 +281,33 @@ private static (string? VerifyHandler, string? RefineHandler, bool Verify, bool 
         }
     }*/
 
-    // Extract named arguments (e.g., Verify = true, Refine = true)
-    foreach (var arg in attributeData.NamedArguments)
-    {
-        switch (arg.Key)
-        {
-            case "VerifyHandler":
-                verifyHandler = arg.Value.Value as string;
-                break;
-            case "RefineHandler":
-                refineHandler = arg.Value.Value as string;
-                break;
-            case "Verify":
-                if (arg.Value.Value is bool verifyValue)
-                    verify = verifyValue;
-                break;
-            case "Refine":
-                if (arg.Value.Value is bool refineValue)
-                    refine = refineValue;
-                break;
+            // Extract named arguments (e.g., Verify = true, Refine = true)
+            foreach (var arg in attributeData.NamedArguments)
+            {
+                switch (arg.Key)
+                {
+                    case "VerifyHandler":
+                        verifyHandler = arg.Value.Value as string;
+                        break;
+                    case "RefineHandler":
+                        refineHandler = arg.Value.Value as string;
+                        break;
+                    case "Verify":
+                        if (arg.Value.Value is bool verifyValue)
+                            verify = verifyValue;
+                        break;
+                    case "Refine":
+                        if (arg.Value.Value is bool refineValue)
+                            refine = refineValue;
+                        break;
+                }
+            }
+
+            // Simulate the constructor logic
+            verify = verify || !string.IsNullOrEmpty(verifyHandler);
+            refine = refine || !string.IsNullOrEmpty(refineHandler);
+
+            return (verifyHandler, refineHandler, verify, refine);
         }
     }
-
-    // Simulate the constructor logic
-    verify = verify || !string.IsNullOrEmpty(verifyHandler);
-    refine = refine || !string.IsNullOrEmpty(refineHandler);
-
-    return (verifyHandler, refineHandler, verify, refine);
-}
 }

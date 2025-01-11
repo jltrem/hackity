@@ -1,89 +1,89 @@
-namespace RoslynCodeGen.Generators;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
-
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System.Linq;
 using System.Text;
 
-public class MethodLoggerSyntaxReceiver : ISyntaxReceiver
+namespace RoslynCodeGen.Generators
 {
-    public List<MethodDeclarationSyntax> CandidateMethods { get; } = new();
 
-    public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
+    public class MethodLoggerSyntaxReceiver : ISyntaxReceiver
     {
-        if (syntaxNode is MethodDeclarationSyntax methodDeclaration &&
-            methodDeclaration.Modifiers.Any(m => m.Text == "partial"))
+        public List<MethodDeclarationSyntax> CandidateMethods { get; } = new List<MethodDeclarationSyntax>();
+
+        public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
         {
-            // Check if the method has our specific attribute
-            foreach (var attributeList in methodDeclaration.AttributeLists)
+            if (syntaxNode is MethodDeclarationSyntax methodDeclaration &&
+                methodDeclaration.Modifiers.Any(m => m.Text == "partial"))
             {
-                foreach (var attribute in attributeList.Attributes)
+                // Check if the method has our specific attribute
+                foreach (var attributeList in methodDeclaration.AttributeLists)
                 {
-                    var name = attribute.Name.ToString();
-                    if (name == "MethodLogger" || name == "MethodLoggerAttribute")
+                    foreach (var attribute in attributeList.Attributes)
                     {
-                        CandidateMethods.Add(methodDeclaration);
-                        break;
+                        var name = attribute.Name.ToString();
+                        if (name == "MethodLogger" || name == "MethodLoggerAttribute")
+                        {
+                            CandidateMethods.Add(methodDeclaration);
+                            break;
+                        }
                     }
                 }
             }
         }
     }
-}
 
 
 
-[Generator]
-public class MethodLoggerGenerator : ISourceGenerator
-{
-    public void Initialize(GeneratorInitializationContext context)
+    [Generator]
+    public class MethodLoggerGenerator : ISourceGenerator
     {
-        // Register a syntax receiver to collect methods with [MyCustomAttribute]
-        context.RegisterForSyntaxNotifications(() => new MethodLoggerSyntaxReceiver());
-    }
-    
-    private static string GetNamespace(SyntaxNode node)
-    {
-        var namespaceDeclaration = node.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
-        if (namespaceDeclaration == null)
-            return "GlobalNamespace";
-
-        var namespaceParts = new Stack<string>();
-
-        while (namespaceDeclaration != null)
+        public void Initialize(GeneratorInitializationContext context)
         {
-            namespaceParts.Push(namespaceDeclaration.Name.ToString());
-            namespaceDeclaration = namespaceDeclaration.Parent as BaseNamespaceDeclarationSyntax;
+            // Register a syntax receiver to collect methods with [MyCustomAttribute]
+            context.RegisterForSyntaxNotifications(() => new MethodLoggerSyntaxReceiver());
         }
 
-        return string.Join(".", namespaceParts);
-    }
-
-    public void Execute(GeneratorExecutionContext context)
-    {
-        if (context.SyntaxReceiver is not MethodLoggerSyntaxReceiver receiver)
-            return;
-
-        foreach (var methodDeclaration in receiver.CandidateMethods)
+        private static string GetNamespace(SyntaxNode node)
         {
-            // Extract method information
-            var methodName = methodDeclaration.Identifier.ToString();
-            var parameters = string.Join(", ", methodDeclaration.ParameterList.Parameters.Select(p => $"{p.Type} {p.Identifier}"));
-            var returnType = methodDeclaration.ReturnType.ToString();
-            var namespaceName = GetNamespace(methodDeclaration);
-            var classNode = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-            var className = classNode?.Identifier.Text;
+            var namespaceDeclaration = node.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
+            if (namespaceDeclaration == null)
+                return "GlobalNamespace";
 
-            // Extract the method's body
-            var methodBody = methodDeclaration.Body?.ToString() ?? "";
+            var namespaceParts = new Stack<string>();
 
-            var stubCode = $@"
+            while (namespaceDeclaration != null)
+            {
+                namespaceParts.Push(namespaceDeclaration.Name.ToString());
+                namespaceDeclaration = namespaceDeclaration.Parent as BaseNamespaceDeclarationSyntax;
+            }
+
+            return string.Join(".", namespaceParts);
+        }
+
+        public void Execute(GeneratorExecutionContext context)
+        {
+            var receiver = context.SyntaxReceiver as MethodLoggerSyntaxReceiver;
+            if (receiver == null)
+                return;
+
+            foreach (var methodDeclaration in receiver.CandidateMethods)
+            {
+                // Extract method information
+                var methodName = methodDeclaration.Identifier.ToString();
+                var parameters = string.Join(", ",
+                    methodDeclaration.ParameterList.Parameters.Select(p => $"{p.Type} {p.Identifier}"));
+                var returnType = methodDeclaration.ReturnType.ToString();
+                var namespaceName = GetNamespace(methodDeclaration);
+                var classNode = methodDeclaration.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                var className = classNode?.Identifier.Text;
+
+                // Extract the method's body
+                var methodBody = methodDeclaration.Body?.ToString() ?? "";
+
+                var stubCode = $@"
 namespace {namespaceName}
 {{
     public partial class {className}
@@ -91,10 +91,10 @@ namespace {namespaceName}
         public partial {returnType} {methodName}({parameters});
     }}
 }}";
-            context.AddSource($"{className}_{methodName}_Stub.cs", SourceText.From(stubCode, Encoding.UTF8));
-            
+                context.AddSource($"{className}_{methodName}_Stub.cs", SourceText.From(stubCode, Encoding.UTF8));
+
 // Generate the enhanced method body
-            var enhancedBody = $@"
+                var enhancedBody = $@"
 namespace {namespaceName}
 {{
     public partial class {className}
@@ -118,8 +118,10 @@ namespace {namespaceName}
         }}
     }}
 }}";
-            // Emit the generated code
-            context.AddSource($"{className}_{methodName}_Generated.cs", SourceText.From(enhancedBody, Encoding.UTF8));
+                // Emit the generated code
+                context.AddSource($"{className}_{methodName}_Generated.cs",
+                    SourceText.From(enhancedBody, Encoding.UTF8));
+            }
         }
     }
 }
