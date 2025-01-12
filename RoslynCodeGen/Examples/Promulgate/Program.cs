@@ -1,5 +1,4 @@
-﻿using System;
-using RoslynCodeGen;
+﻿using RoslynCodeGen;
 
 namespace Promulgate;
 
@@ -9,25 +8,33 @@ public partial record TestRec
 {
     private const string X2 = "DoubleValue";
 
+    [Promulgate(Refine = true, RefineHandler = X2)]
+    private readonly int _funkyCount;
+
     [Promulgate] private readonly string _name;
 
     [Promulgate(Verify = false, Refine = true)]
     private readonly string _school;
 
-    [Promulgate(Refine = true, RefineHandler = X2)]
-    private readonly int _funkyCount;
+    private static partial bool VerifyName(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value);
+    }
 
+    private static partial string RefineSchool(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "<none>" : value.Trim();
+    }
 
-    private static partial bool VerifyName(string value) => !string.IsNullOrWhiteSpace(value);
+    private static partial bool VerifyFunkyCount(int value)
+    {
+        return value is > 0 and <= 10;
+    }
 
-    private static partial string RefineSchool(string value) =>
-        string.IsNullOrWhiteSpace(value) ? "<none>" : value.Trim();
-
-    private static partial bool VerifyFunkyCount(int value) =>
-        value is > 0 and <= 10;
-
-    private static partial int DoubleValue(int value) =>
-        value * 2;
+    private static partial int DoubleValue(int value)
+    {
+        return value * 2;
+    }
 }
 
 public partial record PersonalName
@@ -37,19 +44,21 @@ public partial record PersonalName
 
     [Promulgate(VerifyHandler = "VerifyName", RefineHandler = "TrimValue")]
     private readonly string _last;
-    
+
     private static partial bool VerifyName(string value)
     {
-        string cleaned = value?.Trim() ?? "";
+        var cleaned = value?.Trim() ?? "";
         return cleaned.Length > 1 && cleaned.Length < 80;
     }
-    private static partial string TrimValue(string value) => value?.Trim() ?? "";
-}
 
+    private static partial string TrimValue(string value)
+    {
+        return value?.Trim() ?? "";
+    }
+}
 
 public static class Program
 {
-
     public static void Main(string[] args)
     {
         Console.WriteLine(StringWrapper.Create("howdy").Value);
@@ -58,12 +67,12 @@ public static class Program
             var sut = X10.Create(2);
             Console.WriteLine($"X10.Create(2) : {sut.Value}");
         }
-        
+
         {
             var sut = NonNegative.Create(5);
             Console.WriteLine($"NonNegative.Create(5) : {sut.Value}");
         }
-        
+
         {
             var sut = NonNegative.Create(0);
             Console.WriteLine($"NonNegative.Create(0) : {sut.Value}");
@@ -80,7 +89,7 @@ public static class Program
                 Console.WriteLine($"NonNegative.Create(-5) : {e.Message}");
             }
         }
-        
+
         {
             StrictlyPositive sut = 1;
             Console.WriteLine($"StrictlyPositive sut = 1 : {sut.Value}");
@@ -88,13 +97,9 @@ public static class Program
 
         {
             if (StrictlyPositive.TryCreate(0, out var sut))
-            {
                 Console.WriteLine($"StrictlyPositive.TryCreate(0, out var sut) : {sut!.Value}");
-            }
             else
-            {
                 Console.WriteLine("StrictlyPositive.TryCreate(0, out var sut) : false");
-            }
         }
 
         {
@@ -108,10 +113,11 @@ public static class Program
                 Console.WriteLine($"NonNullException = null : {e.Message}");
             }
         }
-        
+
         {
             var sut = NonNullException.Create(new AggregateException("foobar"));
-            Console.WriteLine($"NonNullException.Create(new AggregateException(\"foobar\")) : {Environment.NewLine}\t{sut}{Environment.NewLine}\t{sut.Value}");
+            Console.WriteLine(
+                $"NonNullException.Create(new AggregateException(\"foobar\")) : {Environment.NewLine}\t{sut}{Environment.NewLine}\t{sut.Value}");
         }
 
         {
@@ -135,7 +141,7 @@ public static class Program
                 Console.WriteLine($"BasketballScore sut = (76, -1) : {Environment.NewLine}{e.Message}");
             }
         }
-        
+
         {
             try
             {
@@ -147,16 +153,16 @@ public static class Program
                 Console.WriteLine($"BasketballScore sut = (-2, -1) : {Environment.NewLine}{e.Message}");
             }
         }
-        
+
         return;
-        
+
         Console.WriteLine("Method Logger!");
         var mlogger = new MethodLogger();
-        int result = mlogger.Divide(10, 2);
-        
+        var result = mlogger.Divide(10, 2);
+
         Console.WriteLine(result);
-        
-        
+
+
         Console.WriteLine("Promulgate!");
 
         var personA = new TestRec { FunkyCount = 1, Name = "Jack", School = "School of Rock" };
@@ -175,7 +181,7 @@ public static class Program
         {
             Console.WriteLine($"success (expected exception) - {e.Message}");
         }
-        
+
         try
         {
             var personalName1 = new PersonalName { First = null, Last = "Black" };
@@ -197,7 +203,7 @@ public static class Program
         {
             Console.WriteLine($"success (expected exception) - {e.Message}");
         }
-        
+
         var personalName = new PersonalName { First = "Jack", Last = "Black" };
         Console.WriteLine(personalName);
     }

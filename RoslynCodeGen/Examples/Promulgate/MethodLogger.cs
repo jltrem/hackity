@@ -1,8 +1,6 @@
-using RoslynCodeGen;
-
 namespace Promulgate;
 
-public partial class MethodLogger
+public class MethodLogger
 {
     //[MethodLogger]
     // no solution yet
@@ -10,6 +8,6 @@ public partial class MethodLogger
     // unless it gets really hacky
     public int Divide(int a, int b)
     {
-        return a / b; 
+        return a / b;
     }
 }

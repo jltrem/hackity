@@ -9,10 +9,18 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace RoslynCodeGen.Generators
 {
-
     [Generator]
     public class PromulgateGenerator : IIncrementalGenerator
     {
+        private static readonly DiagnosticDescriptor FieldNotReadonlyError = new DiagnosticDescriptor(
+            "GEN001",
+            "ValidateAttribute requires readonly backing fields",
+            "The field '{0}' is decorated with [Validate] but must be declared as 'readonly'",
+            "SourceGenerator",
+            DiagnosticSeverity.Error,
+            true
+        );
+
         private readonly HashSet<string> _declaredHandlers = new HashSet<string>();
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -20,15 +28,15 @@ namespace RoslynCodeGen.Generators
             // Get params for all fields with the [Promulgate] attribute
             var fieldMetaData = context.SyntaxProvider
                 .CreateSyntaxProvider(
-                    predicate: IsCandidateField,
-                    transform: GetPromulgateParams
+                    IsCandidateField,
+                    GetPromulgateParams
                 )
                 .Where(field => field != null);
 
             // Add diagnostics
             context.RegisterSourceOutput(
-                source: fieldMetaData.Where(result => result.Diagnostic != null),
-                action: (ctx, result) => ctx.ReportDiagnostic(result.Diagnostic!));
+                fieldMetaData.Where(result => result.Diagnostic != null),
+                (ctx, result) => ctx.ReportDiagnostic(result.Diagnostic!));
 
             // Generate
             context.RegisterSourceOutput(fieldMetaData, GenerateSource);
@@ -103,42 +111,23 @@ namespace RoslynCodeGen.Generators
         }
 
         /// <summary>
-        /// Helper to extract named argument values from an AttributeData object.
+        ///     Helper to extract named argument values from an AttributeData object.
         /// </summary>
         private static T GetAttributeProperty<T>(AttributeData attributeData, string propertyName)
         {
             // First try constructor arguments
             foreach (var constructorArg in attributeData.ConstructorArguments)
-            {
                 if (constructorArg.Value is T value)
-                {
                     return value;
-                }
-            }
 
             // Then try named arguments
             foreach (var namedArg in attributeData.NamedArguments)
-            {
                 if (namedArg.Key == propertyName)
-                {
                     if (namedArg.Value.Value is T value)
-                    {
                         return value;
-                    }
-                }
-            }
 
             return default!;
         }
-
-        private static readonly DiagnosticDescriptor FieldNotReadonlyError = new DiagnosticDescriptor(
-            id: "GEN001",
-            title: "ValidateAttribute requires readonly backing fields",
-            messageFormat: "The field '{0}' is decorated with [Validate] but must be declared as 'readonly'",
-            category: "SourceGenerator",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true
-        );
 
         private void GenerateSource(SourceProductionContext context, PromulgateParams promulgateParams)
         {
@@ -178,23 +167,15 @@ namespace RoslynCodeGen.Generators
 
             var verifyKey = $"{namespaceName}.{className} {verifyPartialDeclaration}";
             if (_declaredHandlers.Contains(verifyKey))
-            {
                 verifyPartialDeclaration = "";
-            }
             else
-            {
                 _declaredHandlers.Add(verifyKey);
-            }
 
             var refineKey = $"{namespaceName}.{className} {refinePartialDeclaration}";
             if (_declaredHandlers.Contains(refineKey))
-            {
                 refinePartialDeclaration = "";
-            }
             else
-            {
                 _declaredHandlers.Add(refineKey);
-            }
 
             var source =
                 @$"namespace {namespaceName}
@@ -220,25 +201,13 @@ namespace RoslynCodeGen.Generators
 ";
 
             // Add the generated code
-            string filename = $"{namespaceName.Replace('.', '_')}_{className}_{propertyName}.g.cs";
+            var filename = $"{namespaceName.Replace('.', '_')}_{className}_{propertyName}.g.cs";
             context.AddSource(filename, SourceText.From(source, Encoding.UTF8));
-        }
-
-        private class PromulgateParams
-        {
-            public IFieldSymbol FieldSymbol { get; set; }
-            public Diagnostic? Diagnostic { get; set; }
-
-            public string? VerifyHandler { get; set; }
-            public string? RefineHandler { get; set; }
-
-            public bool Verify { get; set; }
-            public bool Refine { get; set; }
         }
 
 
         /// <summary>
-        /// Simulates the constructor logic of PromulgateAttribute.
+        ///     Simulates the constructor logic of PromulgateAttribute.
         /// </summary>
         private static (string? VerifyHandler, string? RefineHandler, bool Verify, bool Refine)
             SimulatePromulgateAttribute(AttributeData attributeData)
@@ -247,10 +216,10 @@ namespace RoslynCodeGen.Generators
 
             if (attributeData.ConstructorArguments.Length != 4) throw new NotImplementedException();
 
-            string? verifyHandler = (string?)attributeData.ConstructorArguments[0].Value;
-            string? refineHandler = (string?)attributeData.ConstructorArguments[1].Value;
-            bool verify = (bool)attributeData.ConstructorArguments[2].Value;
-            bool refine = (bool)attributeData.ConstructorArguments[3].Value;
+            var verifyHandler = (string?)attributeData.ConstructorArguments[0].Value;
+            var refineHandler = (string?)attributeData.ConstructorArguments[1].Value;
+            var verify = (bool)attributeData.ConstructorArguments[2].Value;
+            var refine = (bool)attributeData.ConstructorArguments[3].Value;
 /*
     if (attributeData.ConstructorArguments.Length > 0)
     {
@@ -283,7 +252,6 @@ namespace RoslynCodeGen.Generators
 
             // Extract named arguments (e.g., Verify = true, Refine = true)
             foreach (var arg in attributeData.NamedArguments)
-            {
                 switch (arg.Key)
                 {
                     case "VerifyHandler":
@@ -301,13 +269,24 @@ namespace RoslynCodeGen.Generators
                             refine = refineValue;
                         break;
                 }
-            }
 
             // Simulate the constructor logic
             verify = verify || !string.IsNullOrEmpty(verifyHandler);
             refine = refine || !string.IsNullOrEmpty(refineHandler);
 
             return (verifyHandler, refineHandler, verify, refine);
+        }
+
+        private class PromulgateParams
+        {
+            public IFieldSymbol FieldSymbol { get; set; }
+            public Diagnostic? Diagnostic { get; set; }
+
+            public string? VerifyHandler { get; set; }
+            public string? RefineHandler { get; set; }
+
+            public bool Verify { get; set; }
+            public bool Refine { get; set; }
         }
     }
 }

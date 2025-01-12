@@ -1,14 +1,12 @@
-
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
-using Microsoft.CodeAnalysis.Text;
 using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace RoslynCodeGen.Generators
 {
-
     public class MethodLoggerSyntaxReceiver : ISyntaxReceiver
     {
         public List<MethodDeclarationSyntax> CandidateMethods { get; } = new List<MethodDeclarationSyntax>();
@@ -17,24 +15,19 @@ namespace RoslynCodeGen.Generators
         {
             if (syntaxNode is MethodDeclarationSyntax methodDeclaration &&
                 methodDeclaration.Modifiers.Any(m => m.Text == "partial"))
-            {
                 // Check if the method has our specific attribute
                 foreach (var attributeList in methodDeclaration.AttributeLists)
+                foreach (var attribute in attributeList.Attributes)
                 {
-                    foreach (var attribute in attributeList.Attributes)
+                    var name = attribute.Name.ToString();
+                    if (name == "MethodLogger" || name == "MethodLoggerAttribute")
                     {
-                        var name = attribute.Name.ToString();
-                        if (name == "MethodLogger" || name == "MethodLoggerAttribute")
-                        {
-                            CandidateMethods.Add(methodDeclaration);
-                            break;
-                        }
+                        CandidateMethods.Add(methodDeclaration);
+                        break;
                     }
                 }
-            }
         }
     }
-
 
 
     [Generator]
@@ -44,23 +37,6 @@ namespace RoslynCodeGen.Generators
         {
             // Register a syntax receiver to collect methods with [MyCustomAttribute]
             context.RegisterForSyntaxNotifications(() => new MethodLoggerSyntaxReceiver());
-        }
-
-        private static string GetNamespace(SyntaxNode node)
-        {
-            var namespaceDeclaration = node.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
-            if (namespaceDeclaration == null)
-                return "GlobalNamespace";
-
-            var namespaceParts = new Stack<string>();
-
-            while (namespaceDeclaration != null)
-            {
-                namespaceParts.Push(namespaceDeclaration.Name.ToString());
-                namespaceDeclaration = namespaceDeclaration.Parent as BaseNamespaceDeclarationSyntax;
-            }
-
-            return string.Join(".", namespaceParts);
         }
 
         public void Execute(GeneratorExecutionContext context)
@@ -122,6 +98,23 @@ namespace {namespaceName}
                 context.AddSource($"{className}_{methodName}_Generated.cs",
                     SourceText.From(enhancedBody, Encoding.UTF8));
             }
+        }
+
+        private static string GetNamespace(SyntaxNode node)
+        {
+            var namespaceDeclaration = node.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
+            if (namespaceDeclaration == null)
+                return "GlobalNamespace";
+
+            var namespaceParts = new Stack<string>();
+
+            while (namespaceDeclaration != null)
+            {
+                namespaceParts.Push(namespaceDeclaration.Name.ToString());
+                namespaceDeclaration = namespaceDeclaration.Parent as BaseNamespaceDeclarationSyntax;
+            }
+
+            return string.Join(".", namespaceParts);
         }
     }
 }
