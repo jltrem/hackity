@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RoslynCodeGen", "RoslynCode
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Promulgate", "Examples\Promulgate\Promulgate.csproj", "{5AE56D67-601B-4DDD-A2EA-739C1D524CE1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UseRefineNuget", "Examples\UseRefineNuget\UseRefineNuget.csproj", "{C41D334F-2815-4CEA-BD4D-66E5F353A584}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{5AE56D67-601B-4DDD-A2EA-739C1D524CE1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5AE56D67-601B-4DDD-A2EA-739C1D524CE1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5AE56D67-601B-4DDD-A2EA-739C1D524CE1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C41D334F-2815-4CEA-BD4D-66E5F353A584}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C41D334F-2815-4CEA-BD4D-66E5F353A584}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C41D334F-2815-4CEA-BD4D-66E5F353A584}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C41D334F-2815-4CEA-BD4D-66E5F353A584}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

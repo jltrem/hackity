@@ -57,19 +57,6 @@ public partial record PersonalName
     }
 }
 
-public static class Program
-{
-    public static void Main(string[] args)
-    {
-        Console.WriteLine(StringWrapper.Create("howdy").Value);
-
-        {
-            var sut = X10.Create(2);
-            Console.WriteLine($"X10.Create(2) : {sut.Value}");
-        }
-
-        {
-            var sut = NonNegative.Create(5);
             Console.WriteLine($"NonNegative.Create(5) : {sut.Value}");
         }
 
@@ -92,6 +79,19 @@ public static class Program
 
         {
             StrictlyPositive sut = 1;
+public static class Program
+{
+    public static void Main(string[] args)
+    {
+        Console.WriteLine(StringWrapper.Create("howdy").Value);
+
+        {
+            var sut = X10.Create(2);
+            Console.WriteLine($"X10.Create(2) : {sut.Value}");
+        }
+
+        {
+            var sut = NonNegative.Create(5);
             Console.WriteLine($"StrictlyPositive sut = 1 : {sut.Value}");
         }
 
