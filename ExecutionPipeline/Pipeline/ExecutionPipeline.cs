@@ -1,22 +1,30 @@
+using System.Reflection;
+
 namespace ExecutionPipeline.Pipeline;
 
 
 // StepFunc delegates (for 0, 1, and 2 dependencies)
-public delegate Task<TContext> StepFunc<TContext>(TContext context);
-public delegate Task<TContext> StepFunc<TContext, T1>(TContext context, T1 dep1);
-public delegate Task<TContext> StepFunc<TContext, T1, T2>(TContext context, T1 dep1, T2 dep2);
+public delegate TContext StepFunc<TContext>(TContext context);
+public delegate TContext StepFunc<TContext, T1>(TContext context, T1 dep1);
+public delegate TContext StepFunc<TContext, T1, T2>(TContext context, T1 dep1, T2 dep2);
+public delegate Task<TContext> StepFuncAsync<TContext>(TContext context);
+public delegate Task<TContext> StepFuncAsync<TContext, T1>(TContext context, T1 dep1);
+public delegate Task<TContext> StepFuncAsync<TContext, T1, T2>(TContext context, T1 dep1, T2 dep2);
 
 
 public interface IPipelineBuilder<TContext>
 {
-    PipelineBuilder<TContext> AddStep(StepFunc<TContext> stepFunc);
-    PipelineBuilder<TContext> AddStep<T1>(StepFunc<TContext, T1> stepFunc);
-    PipelineBuilder<TContext> AddStep<T1, T2>(StepFunc<TContext, T1, T2> stepFunc);
+    PipelineBuilder<TContext> AddStep(StepFunc<TContext> stepFunc, string stepName = "");
+    PipelineBuilder<TContext> AddStep<T1>(StepFunc<TContext, T1> stepFunc, string stepName = "");
+    PipelineBuilder<TContext> AddStep<T1, T2>(StepFunc<TContext, T1, T2> stepFunc, string stepName = "");
+    PipelineBuilder<TContext> AddAsyncStep(StepFuncAsync<TContext> stepFunc, string stepName = "");
+    PipelineBuilder<TContext> AddAsyncStep<T1>(StepFuncAsync<TContext, T1> stepFunc, string stepName = "");
+    PipelineBuilder<TContext> AddAsyncStep<T1, T2>(StepFuncAsync<TContext, T1, T2> stepFunc, string stepName = "");
 }
 
 public class PipelineBuilder<TContext> : IPipelineBuilder<TContext>
 {
-    private readonly List<(Delegate StepFunc, Type[] DependencyTypes)> _steps = new();
+    private readonly List<(Delegate Function, Type[] DependencyTypes, string StepName)> _steps = new();
     private readonly IServiceProvider _provider;
 
     public PipelineBuilder(IServiceProvider provider)
@@ -24,21 +32,38 @@ public class PipelineBuilder<TContext> : IPipelineBuilder<TContext>
         _provider = provider;
     }
 
-    public PipelineBuilder<TContext> AddStep(StepFunc<TContext> stepFunc)
+    public PipelineBuilder<TContext> AddStep(StepFunc<TContext> stepFunc, string stepName = "")
     {
-        _steps.Add((stepFunc, []));
+        _steps.Add((stepFunc, [], stepName));
         return this;
     }
 
-    public PipelineBuilder<TContext> AddStep<T1>(StepFunc<TContext, T1> stepFunc)
+    public PipelineBuilder<TContext> AddStep<T1>(StepFunc<TContext, T1> stepFunc, string stepName = "")
     {
-        _steps.Add((stepFunc, new[] { typeof(T1) }));
+        _steps.Add((stepFunc, [typeof(T1)], stepName));
         return this;
     }
 
-    public PipelineBuilder<TContext> AddStep<T1, T2>(StepFunc<TContext, T1, T2> stepFunc)
+    public PipelineBuilder<TContext> AddStep<T1, T2>(StepFunc<TContext, T1, T2> stepFunc, string stepName = "")
     {
-        _steps.Add((stepFunc, [typeof(T1), typeof(T2)]));
+        _steps.Add((stepFunc, [typeof(T1), typeof(T2)], stepName));
+        return this;
+    }
+    public PipelineBuilder<TContext> AddAsyncStep(StepFuncAsync<TContext> stepFunc, string stepName = "")
+    {
+        _steps.Add((stepFunc, [], stepName));
+        return this;
+    }
+
+    public PipelineBuilder<TContext> AddAsyncStep<T1>(StepFuncAsync<TContext, T1> stepFunc, string stepName = "")
+    {
+        _steps.Add((stepFunc, [typeof(T1)], stepName));
+        return this;
+    }
+
+    public PipelineBuilder<TContext> AddAsyncStep<T1, T2>(StepFuncAsync<TContext, T1, T2> stepFunc, string stepName = "")
+    {
+        _steps.Add((stepFunc, [typeof(T1), typeof(T2)], stepName));
         return this;
     }
 
@@ -51,9 +76,9 @@ public class PipelineBuilder<TContext> : IPipelineBuilder<TContext>
 public class ExecutionPipeline<TContext> : IExecutionPipeline<TContext>
 {
     private readonly IServiceProvider _provider;
-    private readonly List<(Delegate StepFunc, Type[] DependencyTypes)> _steps;
+    private readonly List<(Delegate Function, Type[] DependencyTypes, string StepName)> _steps;
 
-    public ExecutionPipeline(IServiceProvider provider, List<(Delegate StepFunc, Type[] DependencyTypes)> steps)
+    public ExecutionPipeline(IServiceProvider provider, List<(Delegate Function, Type[] DependencyTypes, string StepName)> steps)
     {
         _provider = provider;
         _steps = steps;
@@ -69,7 +94,7 @@ public class ExecutionPipeline<TContext> : IExecutionPipeline<TContext>
     }
 
     private async Task<TContext> ExecuteStepAsync(
-        (Delegate StepFunc, Type[] DependencyTypes) step,
+        (Delegate Function, Type[] DependencyTypes, string StepName) step,
         TContext context, int stepIndex)
     {
         // Resolve dependencies
@@ -81,13 +106,38 @@ public class ExecutionPipeline<TContext> : IExecutionPipeline<TContext>
 
         try
         {
-            TContext result = await (Task<TContext>)step.StepFunc.DynamicInvoke(arguments)!;
-            return result;
+            // Safely invoke the delegate and handle both synchronous and asynchronous results
+            object? result = step.Function.DynamicInvoke(arguments);
+        
+            if (result is Task<TContext> taskResult)
+            {
+                // Handle properly awaitable Task<TContext>
+                // This handles both true async methods and non-async Task-returning methods.
+                // Any exceptions in the task will be thrown when awaited.
+                Console.WriteLine($"Step {stepIndex + 1} - awaiting Task");
+                return await taskResult;
+            }
+            if (result is TContext directResult)
+            {
+                // Handle synchronous functions that return TContext directly
+                Console.WriteLine($"Step {stepIndex + 1} - synchronous non-task");
+                return directResult;
+            }
+            throw new InvalidOperationException($"Step '{step.StepName}' returned an invalid result type. Expected Task<{typeof(TContext).Name}> or {typeof(TContext).Name}, but got {result?.GetType().Name ?? "null"}.");
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException != null)
+        {
+            // Unwrap exceptions from synchronous methods
+
+            Console.WriteLine(tie.InnerException.Message);
+            Console.WriteLine("INNER EXCEPTION");
+            throw new ExecutionPipelineStepException($"INNER EXCEPTION: Error executing pipeline step {stepIndex}", tie.InnerException);
         }
         catch (Exception ex) 
         {
-            // Log or handle inner exception appropriately here
-            throw new ExecutionPipelineStepException($"Error executing pipeline step {stepIndex}", ex);
+            Console.WriteLine(ex.Message);
+            Console.WriteLine("OUTER EXCEPTION");
+            throw new ExecutionPipelineStepException($"OUTER EXCEPTION: Error executing pipeline step {stepIndex}", ex);
         }
     }
 }
