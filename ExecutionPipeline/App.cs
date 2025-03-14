@@ -15,6 +15,8 @@ public class App
 
         MyPipelineContext result = await _pipeline.ExecuteAsync(new MyPipelineContext { Seed = 123 });
         
+        result.StepLog.ForEach(Console.WriteLine);
+        
         Console.WriteLine($"Seed: {result.Seed}");
         Console.WriteLine($"Squared: {result.Squared}");
         Console.WriteLine($"SumOfDigits: {result.SumOfDigits}");

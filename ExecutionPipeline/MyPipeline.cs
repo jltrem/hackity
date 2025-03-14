@@ -3,9 +3,12 @@ using ExecutionPipeline.AppServices;
 
 namespace ExecutionPipeline;
 
+public class MyPipelineException(string message) : Exception(message);
+    
 public class MyPipelineContext
 {
     public required int Seed { get; init; }
+    public List<string> StepLog { get; } = [];
     public int? Squared { get; set; }
     public int? SumOfDigits { get; set; }
     public long? Factorial { get; set; }
@@ -28,28 +31,46 @@ public sealed class MyExecutionPipeline : IMyExecutionPipeline
 
     private static ExecutionPipeline<MyPipelineContext> Build(IExecutionPipelineBuilderFactory factory) =>
         factory.Create<MyPipelineContext>()
-            .AddStep(
+            .AddAsyncStep(
                 async (ctx) =>
                 {
+                    //throw new MyPipelineException("this will be an outer exception");
+
+                    ctx.StepLog.Add("Step 1 - AddAsyncStep with async and use await");
                     ctx.Squared = ctx.Seed * ctx.Seed;
+                    await Task.Delay(10);
                     return ctx;
                 })
-            .AddStep(
-                async (MyPipelineContext ctx, IDigitsSumService summer) =>
+            .AddAsyncStep<IDigitsSumService>(
+                (ctx, summer) =>
                 {
-                    if (ctx.Squared is null) throw new ExecutionPipelineStepException("PlusTwo is null");
+                    //throw new MyPipelineException("this will be an inner exception");
+                    
+                    ctx.StepLog.Add("Step 2 - AddAsyncStep: return Task but no async");
+                    if (ctx.Squared is null) throw new ExecutionPipelineStepException("Squared is null");
                     
                     ctx.SumOfDigits = summer.SumDigits(ctx.Squared.Value);
+                    return Task.FromResult(ctx);
+                })
+            .AddStep(
+                (MyPipelineContext ctx, IFactorialService factorialService) =>
+                {
+                    //throw new MyPipelineException("this will be an inner exception");
+                    
+                    ctx.StepLog.Add("Step 3 - AddStep: return context synchronously");
+                    if (ctx.SumOfDigits is null) throw new ExecutionPipelineStepException("SumOfDigits is null");
+                    
+                    ctx.Factorial = factorialService.Calculate(ctx.SumOfDigits.Value);
                     return ctx;
                 })
-            .AddStep<IFactorialService, IReverseDigitsService>(LastThing)
+            .AddAsyncStep<IReverseDigitsService>(ReverseDigits)
             .Build();
 
-    private static async Task<MyPipelineContext> LastThing(MyPipelineContext ctx, IFactorialService factorialService, IReverseDigitsService reverseDigitsService)
+    private static async Task<MyPipelineContext> ReverseDigits(MyPipelineContext ctx, IReverseDigitsService reverseDigitsService)
     {
-        if (ctx.SumOfDigits is null) throw new ExecutionPipelineStepException("SumOfDigits is null");
+        ctx.StepLog.Add("Step 3 - AddStep: AddAsyncStep with async but no await");
+        if (ctx.Factorial is null) throw new ExecutionPipelineStepException("Factorial is null");
 
-        ctx.Factorial = factorialService.Calculate(ctx.SumOfDigits.Value);
         ctx.Reversed = reverseDigitsService.ReverseDigits(ctx.Factorial.Value);
         return ctx;
     }
