@@ -3,6 +3,8 @@ using ExecutionPipeline.AppServices;
 
 namespace ExecutionPipeline;
 
+public class MyPipelineException(string message) : Exception(message);
+    
 public class MyPipelineContext
 {
     public required int Seed { get; init; }
@@ -32,7 +34,7 @@ public sealed class MyExecutionPipeline : IMyExecutionPipeline
             .AddAsyncStep(
                 async (ctx) =>
                 {
-                    //throw new Exception("this will be an outer exception");
+                    //throw new MyPipelineException("this will be an outer exception");
 
                     ctx.StepLog.Add("Step 1 - AddAsyncStep with async and use await");
                     ctx.Squared = ctx.Seed * ctx.Seed;
@@ -42,7 +44,7 @@ public sealed class MyExecutionPipeline : IMyExecutionPipeline
             .AddAsyncStep<IDigitsSumService>(
                 (ctx, summer) =>
                 {
-                    //throw new Exception("this will be an inner exception");
+                    //throw new MyPipelineException("this will be an inner exception");
                     
                     ctx.StepLog.Add("Step 2 - AddAsyncStep: return Task but no async");
                     if (ctx.Squared is null) throw new ExecutionPipelineStepException("Squared is null");
@@ -53,7 +55,7 @@ public sealed class MyExecutionPipeline : IMyExecutionPipeline
             .AddStep(
                 (MyPipelineContext ctx, IFactorialService factorialService) =>
                 {
-                    //throw new Exception("this will be an inner exception");
+                    //throw new MyPipelineException("this will be an inner exception");
                     
                     ctx.StepLog.Add("Step 3 - AddStep: return context synchronously");
                     if (ctx.SumOfDigits is null) throw new ExecutionPipelineStepException("SumOfDigits is null");

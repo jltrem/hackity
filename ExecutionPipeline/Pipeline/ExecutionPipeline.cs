@@ -88,7 +88,15 @@ public class ExecutionPipeline<TContext> : IExecutionPipeline<TContext>
     {
         for (int i = 0; i < _steps.Count; i++)
         {
-            context = await ExecuteStepAsync(_steps[i], context, i);
+            try
+            {
+                context = await ExecuteStepAsync(_steps[i], context, i);
+            }
+            catch (MyPipelineException e)
+            {
+                Console.WriteLine($"Ending early with MyPipelineException: {e.Message}");
+                return context;
+            }
         }
         return context;
     }
@@ -131,12 +139,22 @@ public class ExecutionPipeline<TContext> : IExecutionPipeline<TContext>
 
             Console.WriteLine(tie.InnerException.Message);
             Console.WriteLine("INNER EXCEPTION");
+
+            if (tie.InnerException is MyPipelineException)
+            {
+                throw tie.InnerException;
+            }
             throw new ExecutionPipelineStepException($"INNER EXCEPTION: Error executing pipeline step {stepIndex}", tie.InnerException);
         }
         catch (Exception ex) 
         {
             Console.WriteLine(ex.Message);
             Console.WriteLine("OUTER EXCEPTION");
+            
+            if (ex is MyPipelineException)
+            {
+                throw;
+            }
             throw new ExecutionPipelineStepException($"OUTER EXCEPTION: Error executing pipeline step {stepIndex}", ex);
         }
     }
